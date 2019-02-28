@@ -16,6 +16,7 @@ import os
 import spacy
 import ujson as json
 import urllib.request
+import pdb
 
 from args import get_setup_args
 from codecs import open
@@ -246,7 +247,8 @@ def is_answerable(example):
     return len(example['y2s']) > 0 and len(example['y1s']) > 0
 
 
-def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_dict, is_test=False):
+def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_dict,
+                   is_test=False, limit=None):
     para_limit = args.test_para_limit if is_test else args.para_limit
     ques_limit = args.test_ques_limit if is_test else args.ques_limit
     ans_limit = args.ans_limit
@@ -328,6 +330,7 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
         y1s.append(start)
         y2s.append(end)
         ids.append(example["id"])
+        if n == limit: break
 
     np.savez(out_file,
              context_idxs=np.array(context_idxs),
@@ -360,7 +363,8 @@ def pre_process(args):
 
     # Process dev and test sets
     dev_examples, dev_eval = process_file(args.dev_file, "dev", word_counter, char_counter)
-    build_features(args, train_examples, "train", args.train_record_file, word2idx_dict, char2idx_dict)
+    build_features(args, train_examples, "train", args.train_record_file, word2idx_dict,
+                   char2idx_dict, limit=args.train_limit)
     dev_meta = build_features(args, dev_examples, "dev", args.dev_record_file, word2idx_dict, char2idx_dict)
     if args.include_test_examples:
         test_examples, test_eval = process_file(args.test_file, "test", word_counter, char_counter)
@@ -396,4 +400,5 @@ if __name__ == '__main__':
     glove_dir = url_to_data_path(args_.glove_url.replace('.zip', ''))
     glove_ext = '.txt' if glove_dir.endswith('d') else '.{}d.txt'.format(args_.glove_dim)
     args_.glove_file = os.path.join(glove_dir, os.path.basename(glove_dir) + glove_ext)
+    pdb.set_trace()
     pre_process(args_)

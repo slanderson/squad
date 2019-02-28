@@ -72,6 +72,10 @@ def get_setup_args():
                         type=int,
                         default=30,
                         help='Max number of words in a training example answer')
+    parser.add_argument('--train_limit',
+                        type=int,
+                        default=None,
+                        help='Max number of training examples to process')
     parser.add_argument('--char_limit',
                         type=int,
                         default=16,
