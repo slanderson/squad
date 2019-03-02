@@ -1,7 +1,8 @@
 """Assortment of layers for use in models.py.
 
 Author:
-    Chris Chute (chute@stanford.edu)
+    Spenser Anderson (aspenser@stanford.edu)
+    Adapted from code by Chris Chute (chute@stanford.edu)
 """
 
 import torch
@@ -11,6 +12,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from util import masked_softmax
 
+import pdb
 
 class Embedding(nn.Module):
     """Embedding layer used by BiDAF, without the character-level component.
@@ -22,21 +24,30 @@ class Embedding(nn.Module):
         word_vectors (torch.Tensor): Pre-trained word vectors.
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations
+        char_cnn (bool): Whether or not to use character-based CNN embeddings
     """
-    def __init__(self, word_vectors, hidden_size, drop_prob):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, char_cnn=False):
         super(Embedding, self).__init__()
+
         self.drop_prob = drop_prob
         self.embed = nn.Embedding.from_pretrained(word_vectors)
-        self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
-        self.hwy = HighwayEncoder(2, hidden_size)
+        self.proj = nn.Linear(word_vectors.size(1), 
+                              hidden_size//2 if char_cnn else hidden_size, 
+                              bias=False)
+        self.hwy = HighwayEncoder(2, hidden_size//2 if char_cnn else hidden_size)
+        self.char_emb = CNNEmbedding(hidden_size//2, char_vectors.shape[0],
+                                        char_embed_size=char_vectors.shape[1],
+                                        drop_prob=drop_prob) if char_cnn else None
 
-    def forward(self, x):
+    def forward(self, x, xc):
+        c_emb = self.char_emb(xc.permute(1, 0, 2)).permute(1, 0, 2) if self.char_emb else None
         emb = self.embed(x)   # (batch_size, seq_len, embed_size)
         emb = F.dropout(emb, self.drop_prob, self.training)
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
+        stacked_emb = torch.cat((c_emb, emb), dim=2) if self.char_emb else emb
 
-        return emb
+        return stacked_emb
 
 
 class HighwayEncoder(nn.Module):
@@ -64,9 +75,65 @@ class HighwayEncoder(nn.Module):
             g = torch.sigmoid(gate(x))
             t = F.relu(transform(x))
             x = g * t + (1 - g) * x
-
         return x
 
+
+class CNN(nn.Module):
+    """
+    Implements a one-layer max-pooling CNN, that can take batched inputs (where the first
+    dimension is the batch-size dimension
+    """
+    def __init__(self, char_embed_size, word_embed_size, kernel_size=5):
+        """
+        Initializes a 1-layer max-pool CNN, given the word embedding (output tensor) size.
+        """
+        super(CNN, self).__init__()
+        self.conv = nn.Conv1d(char_embed_size, word_embed_size, kernel_size)
+        self.maxpool = nn.AdaptiveMaxPool1d(1)
+
+    def forward(self, x):
+        """
+        Computes the output of the 1-layer max-pool CNN given a batched input tensor x
+        Takes in a tensor of shape (batch_size, in_channels, seq_length)
+        Outputs a tensor of shape (batch_size, out_channels)
+        """
+        return self.maxpool(nn.functional.relu(self.conv(x))).squeeze()
+
+
+class CNNEmbedding(nn.Module): 
+    """
+    Class that converts input words to their CNN-based embeddings.
+    """
+    def __init__(self, embed_size, num_chars, padding_idx=0, char_embed_size=50, kernel=5,
+                 drop_prob=0.3):
+        """
+        Init the Embedding layer for one language
+        @param embed_size (int): Embedding size (dimensionality) for the output 
+        """
+        super(CNNEmbedding, self).__init__()
+        self.e_char = char_embed_size
+        self.embed_size = embed_size
+        self.char_embed = nn.Embedding(num_chars, char_embed_size, 
+                                       padding_idx=padding_idx)
+        self.cnn = CNN(char_embed_size, embed_size, kernel)
+        self.highway = HighwayEncoder(1, embed_size)
+        self.dropout = nn.Dropout(drop_prob)
+
+    def forward(self, input):
+        """
+        Looks up character-based CNN embeddings for the words in a batch of sentences.
+        @param input: Tensor of integers of shape (sentence_length, batch_size, max_word_length) where
+            each integer is an index into the character vocabulary
+
+        @param output: Tensor of shape (sentence_length, batch_size, embed_size), containing the 
+            CNN-based embeddings for each word of the sentences in the batch
+        """
+        sent_len, batch_size, m_word = input.shape[0], input.shape[1], input.shape[2]
+        embed = self.char_embed(input)
+        sentence_batch_reshape = embed.reshape(sent_len * batch_size, m_word, self.e_char).permute(0, 2, 1)
+        xconv_out = self.cnn(sentence_batch_reshape)
+        x_word_emb = self.dropout(self.highway(xconv_out))
+        return x_word_emb.reshape(sent_len, batch_size, self.embed_size)
 
 class RNNEncoder(nn.Module):
     """General-purpose layer for encoding a sequence using a bidirectional RNN.
@@ -79,15 +146,21 @@ class RNNEncoder(nn.Module):
         hidden_size (int): Size of the RNN hidden state.
         num_layers (int): Number of layers of RNN cells to use.
         drop_prob (float): Probability of zero-ing out activations.
+        use_lstm (bool): Use LSTM (as opposed to GRU) for RNN.
     """
     def __init__(self,
                  input_size,
                  hidden_size,
                  num_layers,
-                 drop_prob=0.):
+                 drop_prob=0.,
+                 use_lstm=False):
         super(RNNEncoder, self).__init__()
         self.drop_prob = drop_prob
         self.rnn = nn.LSTM(input_size, hidden_size, num_layers,
+                           batch_first=True,
+                           bidirectional=True,
+                           dropout=drop_prob if num_layers > 1 else 0.) if use_lstm else\
+                  nn.GRU(input_size, hidden_size, num_layers,
                            batch_first=True,
                            bidirectional=True,
                            dropout=drop_prob if num_layers > 1 else 0.)
@@ -196,7 +269,7 @@ class BiDAFOutput(nn.Module):
         hidden_size (int): Hidden size used in the BiDAF model.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, hidden_size, drop_prob):
+    def __init__(self, hidden_size, drop_prob, use_lstm):
         super(BiDAFOutput, self).__init__()
         self.att_linear_1 = nn.Linear(8 * hidden_size, 1)
         self.mod_linear_1 = nn.Linear(2 * hidden_size, 1)
@@ -204,7 +277,8 @@ class BiDAFOutput(nn.Module):
         self.rnn = RNNEncoder(input_size=2 * hidden_size,
                               hidden_size=hidden_size,
                               num_layers=1,
-                              drop_prob=drop_prob)
+                              drop_prob=drop_prob,
+                              use_lstm=use_lstm)
 
         self.att_linear_2 = nn.Linear(8 * hidden_size, 1)
         self.mod_linear_2 = nn.Linear(2 * hidden_size, 1)
@@ -220,3 +294,5 @@ class BiDAFOutput(nn.Module):
         log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
 
         return log_p1, log_p2
+    
+

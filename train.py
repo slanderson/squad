@@ -13,6 +13,7 @@ import torch.optim as optim
 import torch.optim.lr_scheduler as sched
 import torch.utils.data as data
 import util
+import pdb
 
 from args import get_train_args
 from collections import OrderedDict
@@ -43,12 +44,16 @@ def main(args):
     # Get embeddings
     log.info('Loading embeddings...')
     word_vectors = util.torch_from_json(args.word_emb_file)
+    char_vectors = util.torch_from_json(args.char_emb_file)
 
     # Get model
     log.info('Building model...')
     model = BiDAF(word_vectors=word_vectors,
+                  char_vectors=char_vectors,
                   hidden_size=args.hidden_size,
-                  drop_prob=args.drop_prob)
+                  drop_prob=args.drop_prob,
+                  char_cnn=args.char_cnn,
+                  use_lstm=args.use_lstm)
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info('Loading checkpoint from {}...'.format(args.load_path))
@@ -99,11 +104,13 @@ def main(args):
                 # Setup for forward
                 cw_idxs = cw_idxs.to(device)
                 qw_idxs = qw_idxs.to(device)
+                cc_idxs = cc_idxs.to(device)
+                qc_idxs = qc_idxs.to(device)
                 batch_size = cw_idxs.size(0)
                 optimizer.zero_grad()
 
                 # Forward
-                log_p1, log_p2 = model(cw_idxs, qw_idxs)
+                log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
@@ -169,10 +176,12 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
             # Setup for forward
             cw_idxs = cw_idxs.to(device)
             qw_idxs = qw_idxs.to(device)
+            cc_idxs = cc_idxs.to(device)
+            qc_idxs = qc_idxs.to(device)
             batch_size = cw_idxs.size(0)
 
             # Forward
-            log_p1, log_p2 = model(cw_idxs, qw_idxs)
+            log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
             y1, y2 = y1.to(device), y2.to(device)
             loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)

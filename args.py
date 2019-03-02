@@ -1,7 +1,8 @@
 """Command-line arguments for setup.py, train.py, test.py.
 
 Author:
-    Chris Chute (chute@stanford.edu)
+    Spenser Anderson (aspenser@stanford.edu)
+    Adapated from code by Chris Chute (chute@stanford.edu)
 """
 
 import argparse
@@ -117,6 +118,14 @@ def get_train_args():
                         type=float,
                         default=0.2,
                         help='Probability of zeroing an activation in dropout layers.')
+    parser.add_argument('--char_cnn',
+                        type=bool,
+                        default=False,
+                        help='Whether or not to use character encoding.')
+    parser.add_argument('--use_lstm',
+                        type=bool,
+                        default=False,
+                        help='Whether to use LSTM rather than GRU as RNN unit.')
     parser.add_argument('--metric_name',
                         type=str,
                         default='F1',

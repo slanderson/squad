@@ -400,5 +400,4 @@ if __name__ == '__main__':
     glove_dir = url_to_data_path(args_.glove_url.replace('.zip', ''))
     glove_ext = '.txt' if glove_dir.endswith('d') else '.{}d.txt'.format(args_.glove_dim)
     args_.glove_file = os.path.join(glove_dir, os.path.basename(glove_dir) + glove_ext)
-    pdb.set_trace()
     pre_process(args_)
