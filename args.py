@@ -126,6 +126,10 @@ def get_train_args():
                         type=bool,
                         default=False,
                         help='Whether to use LSTM rather than GRU as RNN unit.')
+    parser.add_argument('--use_aoa',
+                        type=bool,
+                        default=False,
+                        help='Whether to use AoA rather than BiDAF attention')
     parser.add_argument('--metric_name',
                         type=str,
                         default='F1',

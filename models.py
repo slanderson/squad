@@ -11,7 +11,6 @@ import torch.nn as nn
 
 import pdb
 
-
 class BiDAF(nn.Module):
     """Baseline BiDAF model for SQuAD.
 
@@ -34,7 +33,7 @@ class BiDAF(nn.Module):
         char_cnn (bool): Whether or not to use CharCNN word embeddings.
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.,
-                 char_cnn=False, use_lstm=False):
+                 char_cnn=False, use_lstm=False, use_aoa=False):
         super(BiDAF, self).__init__()
         self.emb = layers.Embedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
@@ -49,7 +48,9 @@ class BiDAF(nn.Module):
                                      use_lstm=use_lstm)
 
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
-                                         drop_prob=drop_prob)
+                                         drop_prob=drop_prob) if not use_aoa else\
+                   layers.AoA(hidden_size=2 * hidden_size,
+                                   drop_prob=drop_prob)
 
         self.mod = layers.RNNEncoder(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
