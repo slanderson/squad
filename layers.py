@@ -199,7 +199,7 @@ class BiDAFAttention(nn.Module):
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, hidden_size, drop_prob=0.1, use_att_gate=False):
+    def __init__(self, hidden_size, drop_prob=0.1, use_att_gate=False, additive=False):
         super(BiDAFAttention, self).__init__()
         self.drop_prob = drop_prob
         self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
@@ -209,6 +209,7 @@ class BiDAFAttention(nn.Module):
             nn.init.xavier_uniform_(weight)
         self.bias = nn.Parameter(torch.zeros(1))
         self.gate_linear = nn.Linear(4*hidden_size, 4*hidden_size) if use_att_gate else None
+        self.additive = additive
 
     def forward(self, c, q, c_mask, q_mask):
         batch_size, c_len, _ = c.size()
@@ -230,7 +231,7 @@ class BiDAFAttention(nn.Module):
 
         return x
 
-    def get_similarity_matrix(self, c, q):
+    def get_similarity_matrix(self, c, q, additive=False):
         """Get the "similarity matrix" between context and query (using the
         terminology of the BiDAF paper).
 
@@ -245,30 +246,41 @@ class BiDAFAttention(nn.Module):
         c = F.dropout(c, self.drop_prob, self.training)  # (bs, c_len, hid_size)
         q = F.dropout(q, self.drop_prob, self.training)  # (bs, q_len, hid_size)
 
-        # Shapes: (batch_size, c_len, q_len)
-        s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
-        s1 = torch.matmul(q, self.q_weight).transpose(1, 2)\
-                                           .expand([-1, c_len, -1])
-        s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
-        s = s0 + s1 + s2 + self.bias
+        if not additive:
+            # Shapes: (batch_size, c_len, q_len)
+            s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
+            s1 = torch.matmul(q, self.q_weight).transpose(1, 2)\
+                                               .expand([-1, c_len, -1])
+            s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
+            s = s0 + s1 + s2 + self.bias
+        
+        else:
+            pass
 
         return s
+
 
 class ModelingLayer(nn.Module):
 
     def __init__(self, input_size, hidden_size, num_layers, drop_prob=0.1, use_lstm=False,
                  use_self_att=False, use_att_gate=False):
         super(ModelingLayer, self).__init__()
-        self.rnn = RNNEncoder(input_size=input_size,
+        self.rnn1 = RNNEncoder(input_size=input_size,
+                              hidden_size=hidden_size,
+                              num_layers=1,
+                              drop_prob=drop_prob,
+                              use_lstm=use_lstm)
+        self.rnn2 = RNNEncoder(input_size=8*hidden_size,
                               hidden_size=hidden_size,
                               num_layers=num_layers,
                               drop_prob=drop_prob,
                               use_lstm=use_lstm)
-        self.att = BiDAFAttention(input_size, drop_prob, use_att_gate)
+        self.att = BiDAFAttention(2*hidden_size, drop_prob, use_att_gate)
 
     def forward(self, x, lengths, c_mask):
-        a = self.att(x, x, c_mask, c_mask)
-        y = self.rnn(x, lengths) 
+        v = self.rnn1(x, lengths)
+        a = self.att(v, v, c_mask, c_mask)
+        y = self.rnn2(a, lengths) 
         return y
 
 class AoA(nn.Module):
