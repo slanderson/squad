@@ -49,7 +49,6 @@ class Embedding(nn.Module):
 
         return stacked_emb
 
-
 class HighwayEncoder(nn.Module):
     """Encode an input sequence using a highway network.
 
@@ -200,7 +199,7 @@ class BiDAFAttention(nn.Module):
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, hidden_size, drop_prob=0.1):
+    def __init__(self, hidden_size, drop_prob=0.1, use_att_gate=False):
         super(BiDAFAttention, self).__init__()
         self.drop_prob = drop_prob
         self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
@@ -209,6 +208,7 @@ class BiDAFAttention(nn.Module):
         for weight in (self.c_weight, self.q_weight, self.cq_weight):
             nn.init.xavier_uniform_(weight)
         self.bias = nn.Parameter(torch.zeros(1))
+        self.gate_linear = nn.Linear(4*hidden_size, 4*hidden_size) if use_att_gate else None
 
     def forward(self, c, q, c_mask, q_mask):
         batch_size, c_len, _ = c.size()
@@ -225,6 +225,8 @@ class BiDAFAttention(nn.Module):
         b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
 
         x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
+        x = nn.functional.sigmoid(self.gate_linear(x)) * x if self.gate_linear else x
+        
 
         return x
 
@@ -251,6 +253,23 @@ class BiDAFAttention(nn.Module):
         s = s0 + s1 + s2 + self.bias
 
         return s
+
+class ModelingLayer(nn.Module):
+
+    def __init__(self, input_size, hidden_size, num_layers, drop_prob=0.1, use_lstm=False,
+                 use_self_att=False, use_att_gate=False):
+        super(ModelingLayer, self).__init__()
+        self.rnn = RNNEncoder(input_size=input_size,
+                              hidden_size=hidden_size,
+                              num_layers=num_layers,
+                              drop_prob=drop_prob,
+                              use_lstm=use_lstm)
+        self.att = BiDAFAttention(input_size, drop_prob, use_att_gate)
+
+    def forward(self, x, lengths, c_mask):
+        a = self.att(x, x, c_mask, c_mask)
+        y = self.rnn(x, lengths) 
+        return y
 
 class AoA(nn.Module):
     """Attention-over-attention as described by Cui et al

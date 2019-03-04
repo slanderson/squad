@@ -130,6 +130,14 @@ def get_train_args():
                         type=bool,
                         default=False,
                         help='Whether to use AoA rather than BiDAF attention')
+    parser.add_argument('--use_att_gate',
+                        type=bool,
+                        default=False,
+                        help='Whether to use a gate on the attention layer, as in R-Net.')
+    parser.add_argument('--use_self_att',
+                        type=bool,
+                        default=False,
+                        help='Whether or not to use self-attention as in R-Net.')
     parser.add_argument('--metric_name',
                         type=str,
                         default='F1',
