@@ -36,8 +36,8 @@ class Embedding(nn.Module):
                               bias=False)
         self.hwy = HighwayEncoder(2, hidden_size//2 if char_cnn else hidden_size)
         self.char_emb = CNNEmbedding(hidden_size//2, char_vectors.shape[0],
-                                        char_embed_size=char_vectors.shape[1],
-                                        drop_prob=drop_prob) if char_cnn else None
+                                     char_embed_size=char_vectors.shape[1],
+                                     drop_prob=drop_prob) if char_cnn else None
 
     def forward(self, x, xc):
         c_emb = self.char_emb(xc.permute(1, 0, 2)).permute(1, 0, 2) if self.char_emb else None

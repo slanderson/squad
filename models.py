@@ -34,7 +34,7 @@ class BiDAF(nn.Module):
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.,
                  char_cnn=False, use_lstm=False, use_aoa=False, use_self_att=False,
-                 use_att_gate=False):
+                 use_att_gate=False, share_rnns=True):
         super(BiDAF, self).__init__()
         self.emb = layers.Embedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
@@ -42,11 +42,17 @@ class BiDAF(nn.Module):
                                     drop_prob=drop_prob,
                                     char_cnn=char_cnn)
 
-        self.enc = layers.RNNEncoder(input_size=hidden_size,
-                                     hidden_size=hidden_size,
-                                     num_layers=1,
-                                     drop_prob=drop_prob,
-                                     use_lstm=use_lstm)
+        self.enc_c = layers.RNNEncoder(input_size=hidden_size,
+                                       hidden_size=hidden_size,
+                                       num_layers=1,
+                                       drop_prob=drop_prob,
+                                       use_lstm=use_lstm) 
+        self.enc_q = self.enc_c if share_rnns else\
+                     layers.RNNEncoder(input_size=hidden_size,
+                                       hidden_size=hidden_size,
+                                       num_layers=1,
+                                       drop_prob=drop_prob,
+                                       use_lstm=use_lstm) 
 
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
                                          drop_prob=drop_prob,
@@ -74,8 +80,8 @@ class BiDAF(nn.Module):
         c_emb = self.emb(cw_idxs, cc_idxs)         # (batch_size, c_len, hidden_size)
         q_emb = self.emb(qw_idxs, qc_idxs)         # (batch_size, q_len, hidden_size)
 
-        c_enc = self.enc(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)
-        q_enc = self.enc(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
+        c_enc = self.enc_c(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)
+        q_enc = self.enc_q(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
 
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
@@ -83,5 +89,6 @@ class BiDAF(nn.Module):
         mod = self.mod(att, c_len, c_mask)        # (batch_size, c_len, 2 * hidden_size)
 
         out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
+        pdb.set_trace()
 
         return out
