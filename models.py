@@ -55,18 +55,13 @@ class BiDAF(nn.Module):
                                        use_lstm=use_lstm) 
 
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
-                                         drop_prob=drop_prob,
-                                         use_att_gate=use_att_gate) if not use_aoa else\
-                   layers.AoA(hidden_size=2 * hidden_size,
-                              drop_prob=drop_prob)
+                                         drop_prob=drop_prob,)
 
         self.mod = layers.ModelingLayer(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
                                      num_layers=2,
                                      drop_prob=drop_prob,
-                                     use_lstm=use_lstm,
-                                     use_self_att=use_self_att,
-                                     use_att_gate=use_att_gate)
+                                     use_lstm=use_lstm)
 
         self.out = layers.BiDAFOutput(hidden_size=hidden_size,
                                       drop_prob=drop_prob,
@@ -86,9 +81,9 @@ class BiDAF(nn.Module):
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
 
-        mod = self.mod(att, c_len, c_mask)        # (batch_size, c_len, 2 * hidden_size)
+        mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
 
         out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
-        pdb.set_trace()
 
         return out
+    
