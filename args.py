@@ -138,6 +138,14 @@ def get_train_args():
                         type=bool,
                         default=False,
                         help='Whether or not to use self-attention as in R-Net.')
+    parser.add_argument('--share_rnns',
+                        type=bool,
+                        default=True,
+                        help='Whether to share RNN wights between passage and question.')
+    parser.add_argument('--use_cpu',
+                        type=bool,
+                        default=False,
+                        help='Whether to ensure cpu is always used.')
     parser.add_argument('--metric_name',
                         type=str,
                         default='F1',

@@ -30,7 +30,7 @@ def main(args):
     args.save_dir = util.get_save_dir(args.save_dir, args.name, training=True)
     log = util.get_logger(args.save_dir, args.name)
     tbx = SummaryWriter(args.save_dir)
-    device, args.gpu_ids = util.get_available_devices()
+    device, args.gpu_ids = util.get_available_devices(args.use_cpu)
     log.info('Args: {}'.format(dumps(vars(args), indent=4, sort_keys=True)))
     args.batch_size *= max(1, len(args.gpu_ids))
 
@@ -58,7 +58,7 @@ def main(args):
                   use_self_att=args.use_self_att,
                   use_att_gate=args.use_att_gate,
                   share_rnns=args.share_rnns)
-    model = nn.DataParallel(model, args.gpu_ids)
+    model = nn.DataParallel(model, args.gpu_ids) if len(args.gpu_ids) > 0 else model
     if args.load_path:
         log.info('Loading checkpoint from {}...'.format(args.load_path))
         model, step = util.load_model(model, args.load_path, args.gpu_ids)

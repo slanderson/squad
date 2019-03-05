@@ -346,7 +346,7 @@ def load_model(model, checkpoint_path, gpu_ids, return_step=True):
     return model
 
 
-def get_available_devices():
+def get_available_devices(use_cpu):
     """Get IDs of all available GPUs.
 
     Returns:
@@ -354,7 +354,7 @@ def get_available_devices():
         gpu_ids (list): List of IDs of all GPUs that are available.
     """
     gpu_ids = []
-    if torch.cuda.is_available():
+    if torch.cuda.is_available() and not use_cpu:
         gpu_ids += [gpu_id for gpu_id in range(torch.cuda.device_count())]
         device = torch.device('cuda:{}'.format(gpu_ids[0]))
         torch.cuda.set_device(device)

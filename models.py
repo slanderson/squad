@@ -58,7 +58,7 @@ class BiDAF(nn.Module):
                                          drop_prob=drop_prob,
                                          use_att_gate=use_att_gate) if not use_aoa else\
                    layers.AoA(hidden_size=2 * hidden_size,
-                                   drop_prob=drop_prob)
+                              drop_prob=drop_prob)
 
         self.mod = layers.ModelingLayer(input_size=8 * hidden_size,
                                      hidden_size=hidden_size,
