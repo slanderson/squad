@@ -118,34 +118,6 @@ def get_train_args():
                         type=float,
                         default=0.2,
                         help='Probability of zeroing an activation in dropout layers.')
-    parser.add_argument('--char_cnn',
-                        type=bool,
-                        default=False,
-                        help='Whether or not to use character encoding.')
-    parser.add_argument('--use_lstm',
-                        type=bool,
-                        default=False,
-                        help='Whether to use LSTM rather than GRU as RNN unit.')
-    parser.add_argument('--use_aoa',
-                        type=bool,
-                        default=False,
-                        help='Whether to use AoA rather than BiDAF attention')
-    parser.add_argument('--use_att_gate',
-                        type=bool,
-                        default=False,
-                        help='Whether to use a gate on the attention layer, as in R-Net.')
-    parser.add_argument('--use_self_att',
-                        type=bool,
-                        default=False,
-                        help='Whether or not to use self-attention as in R-Net.')
-    parser.add_argument('--share_rnns',
-                        type=bool,
-                        default=True,
-                        help='Whether to share RNN wights between passage and question.')
-    parser.add_argument('--use_cpu',
-                        type=bool,
-                        default=False,
-                        help='Whether to ensure cpu is always used.')
     parser.add_argument('--metric_name',
                         type=str,
                         default='F1',
@@ -268,6 +240,34 @@ def add_train_test_args(parser):
                         type=int,
                         default=100,
                         help='Number of features in encoder hidden layers.')
+    parser.add_argument('--char_cnn',
+                        type=bool,
+                        default=False,
+                        help='Whether or not to use character encoding.')
+    parser.add_argument('--use_lstm',
+                        type=bool,
+                        default=False,
+                        help='Whether to use LSTM rather than GRU as RNN unit.')
+    parser.add_argument('--use_aoa',
+                        type=bool,
+                        default=False,
+                        help='Whether to use AoA rather than BiDAF attention')
+    parser.add_argument('--use_att_gate',
+                        type=bool,
+                        default=False,
+                        help='Whether to use a gate on the attention layer, as in R-Net.')
+    parser.add_argument('--use_self_att',
+                        type=bool,
+                        default=False,
+                        help='Whether or not to use self-attention as in R-Net.')
+    parser.add_argument('--share_rnns',
+                        type=bool,
+                        default=True,
+                        help='Whether to share RNN wights between passage and question.')
+    parser.add_argument('--use_cpu',
+                        type=bool,
+                        default=False,
+                        help='Whether to ensure cpu is always used.')
     parser.add_argument('--num_visuals',
                         type=int,
                         default=10,

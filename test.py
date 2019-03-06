@@ -34,17 +34,25 @@ def main(args):
     args.save_dir = util.get_save_dir(args.save_dir, args.name, training=False)
     log = util.get_logger(args.save_dir, args.name)
     log.info('Args: {}'.format(dumps(vars(args), indent=4, sort_keys=True)))
-    device, gpu_ids = util.get_available_devices()
+    device, gpu_ids = util.get_available_devices(False)
     args.batch_size *= max(1, len(gpu_ids))
 
     # Get embeddings
     log.info('Loading embeddings...')
     word_vectors = util.torch_from_json(args.word_emb_file)
+    char_vectors = util.torch_from_json(args.char_emb_file)
 
     # Get model
     log.info('Building model...')
     model = BiDAF(word_vectors=word_vectors,
-                  hidden_size=args.hidden_size)
+                  char_vectors=char_vectors,
+                  hidden_size=args.hidden_size,
+                  char_cnn=args.char_cnn,
+                  use_lstm=args.use_lstm,
+                  use_aoa=args.use_aoa,
+                  use_self_att=args.use_self_att,
+                  use_att_gate=args.use_att_gate,
+                  share_rnns=args.share_rnns)
     model = nn.DataParallel(model, gpu_ids)
     log.info('Loading checkpoint from {}...'.format(args.load_path))
     model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
@@ -75,10 +83,12 @@ def main(args):
             # Setup for forward
             cw_idxs = cw_idxs.to(device)
             qw_idxs = qw_idxs.to(device)
+            cc_idxs = cc_idxs.to(device)
+            qc_idxs = qc_idxs.to(device)
             batch_size = cw_idxs.size(0)
 
             # Forward
-            log_p1, log_p2 = model(cw_idxs, qw_idxs)
+            log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
             y1, y2 = y1.to(device), y2.to(device)
             loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)
