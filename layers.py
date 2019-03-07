@@ -48,7 +48,7 @@ class Embedding(nn.Module):
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
 
-        return stacked_emb
+        return emb
 
 class HighwayEncoder(nn.Module):
     """Encode an input sequence using a highway network.
