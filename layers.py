@@ -26,26 +26,27 @@ class Embedding(nn.Module):
         drop_prob (float): Probability of zero-ing out activations
         char_cnn (bool): Whether or not to use character-based CNN embeddings
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, char_cnn=False):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, char_cnn=False,
+                 char_size=50):
         super(Embedding, self).__init__()
 
         self.drop_prob = drop_prob
         self.embed = nn.Embedding.from_pretrained(word_vectors)
-        self.proj = nn.Linear(word_vectors.size(1), 
-                              hidden_size//2 if char_cnn else hidden_size, 
+        self.proj = nn.Linear(word_vectors.size(1) + char_size, 
+                              hidden_size, 
                               bias=False)
-        self.hwy = HighwayEncoder(2, hidden_size//2 if char_cnn else hidden_size)
-        self.char_emb = CNNEmbedding(hidden_size//2, char_vectors.shape[0],
+        self.hwy = HighwayEncoder(2, hidden_size)
+        self.char_emb = CNNEmbedding(char_size, char_vectors.shape[0],
                                      char_embed_size=char_vectors.shape[1],
                                      drop_prob=drop_prob) if char_cnn else None
 
     def forward(self, x, xc):
         c_emb = self.char_emb(xc.permute(1, 0, 2)).permute(1, 0, 2) if self.char_emb else None
         emb = self.embed(x)   # (batch_size, seq_len, embed_size)
-        emb = F.dropout(emb, self.drop_prob, self.training)
+        stacked_emb = torch.cat((c_emb, emb), dim=2) if self.char_emb else emb
+        emb = F.dropout(stacked_emb, self.drop_prob, self.training)
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
-        stacked_emb = torch.cat((c_emb, emb), dim=2) if self.char_emb else emb
 
         return stacked_emb
 
