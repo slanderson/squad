@@ -252,128 +252,40 @@ class BiDAFAttention(nn.Module):
 
         return s
 
-class RNetAttention(nn.Module):
-    """Attention 
-
-    Bidirectional attention computes attention in two directions:
-    The context attends to the query and the query attends to the context.
-    The output of this layer is the concatenation of [context, c2q_attention,
-    context * c2q_attention, context * q2c_attention]. This concatenation allows
-    the attention vector at each timestep, along with the embeddings from
-    previous layers, to flow through the attention layer to the modeling layer.
-    The output has shape (batch_size, context_len, 8 * hidden_size).
+class SelfAttention(nn.Module):
+    """Self-attention in the style of RNet
 
     Args:
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, hidden_size, drop_prob=0.1, use_att_gate=False, additive=False):
-        super(BiDAFAttention, self).__init__()
-        self.drop_prob = drop_prob
-        self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
-        self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
-        self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
-        for weight in (self.c_weight, self.q_weight, self.cq_weight):
-            nn.init.xavier_uniform_(weight)
-        self.bias = nn.Parameter(torch.zeros(1))
-        self.gate_linear = nn.Linear(4*hidden_size, 4*hidden_size) if use_att_gate else None
-        self.additive = additive
-
-    def forward(self, c, q, c_mask, q_mask):
-        batch_size, c_len, _ = c.size()
-        q_len = q.size(1)
-        s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
-        c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
-        q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
-        s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len)
-        s2 = masked_softmax(s, c_mask, dim=1)       # (batch_size, c_len, q_len)
-
-        # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
-        a = torch.bmm(s1, q)
-        # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
-        b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
-
-        x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
-        x = nn.functional.sigmoid(self.gate_linear(x)) * x if self.gate_linear else x
+    def __init__(self, input_size, hidden_size, num_layers=1, drop_prob=0.1, use_lstm=False):
+        super(SelfAttention, self).__init__()
+        self.own_linear = nn.Linear(input_size, hidden_size)
+        self.comp_linear = nn.Linear(input_size, hidden_size)
+        self.rnn = RNNEncoder(input_size=2*input_size,
+                              hidden_size=hidden_size,
+                              num_layers=num_layers,
+                              drop_prob=drop_prob,
+                              use_lstm=use_lstm)
+        self.v = nn.Parameter(torch.zeros(hidden_size, 1))
+        nn.init.xavier_uniform_(self.v)
+        self.dropout = nn.Dropout(drop_prob)
         
 
-        return x
+    def forward(self, v, lengths, p_mask):
+        batch_size, p_len, vec_size = v.size()
+        C = torch.zeros(*v.size())
+        p_mask = p_mask.view(batch_size, p_len, 1)  # (batch_size, c_len, 1)
+        S_v = self.comp_linear(v)
+        for i in range(p_len):
+            S = F.tanh(S_v + self.own_linear(v[:, i, :]).unsqueeze(1)).matmul(self.v)
+            C[:, i, :]= v.permute(0, 2, 1).matmul(masked_softmax(S, p_mask, dim=1)).squeeze()
+            del S
 
-    def get_similarity_matrix(self, c, q, additive=False):
-        """Get the "similarity matrix" between context and query (using the
-        terminology of the BiDAF paper).
-
-        A naive implementation as described in BiDAF would concatenate the
-        three vectors then project the result with a single weight matrix. This
-        method is a more memory-efficient implementation of the same operation.
-
-        See Also:
-            Equation 1 in https://arxiv.org/abs/1611.01603
-        """
-        c_len, q_len = c.size(1), q.size(1)
-        c = F.dropout(c, self.drop_prob, self.training)  # (bs, c_len, hid_size)
-        q = F.dropout(q, self.drop_prob, self.training)  # (bs, q_len, hid_size)
-
-        if not additive:
-            # Shapes: (batch_size, c_len, q_len)
-            s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
-            s1 = torch.matmul(q, self.q_weight).transpose(1, 2)\
-                                               .expand([-1, c_len, -1])
-            s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
-            s = s0 + s1 + s2 + self.bias
-        
-        else:
-            pass
-
-        return s
-
-
-class AoA(nn.Module):
-    """Attention-over-attention as described by Cui et al
-
-    Attention-over-attention computes the similarity matrix whose columns are
-    query-to-context attention, and whose rows are context-to-query attention.  It then
-    uses to q2c attention to attend to the various columns of c2q attention.
-
-    Args:
-        hidden_size (int): Size of hidden activations.
-        drop_prob (float): Probability of zero-ing out activations.
-    """
-    def __init__(self, hidden_size, drop_prob=0.1):
-        super(AoA, self).__init__()
-        self.att_weight = nn.Parameter(torch.zeros(hidden_size, hidden_size))
-        nn.init.xavier_uniform_(self.att_weight)
-        self.drop_prob = drop_prob
-
-    def forward(self, c, q, c_mask, q_mask):
-        batch_size, c_len, _ = c.size()
-        q_len = q.size(1)
-        S = self.get_S_matrix(c, q)                 # (batch_size, c_len, q_len)
-        c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
-        q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
-        s1 = masked_softmax(S, q_mask, dim=2)       # (batch_size, c_len, q_len)
-        s2 = masked_softmax(S, c_mask, dim=1)       # (batch_size, c_len, q_len)
-
-        # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
-        a = torch.bmm(s1, q)
-        # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
-        b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
-
-        x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
-
-        return x
-
-    def get_S_matrix(self, c, q):
-        """Get the "similarity matrix" between context and query (S_ij, as described in
-        the AoA paper).
-        """
-        c = F.dropout(c, self.drop_prob, self.training)  # (bs, c_len, hid_size)
-        q = F.dropout(q, self.drop_prob, self.training)  # (bs, q_len, hid_size)
-
-        S = torch.matmul(c, torch.matmul(self.att_weight, q.permute(0, 2, 1)))
-        # TODO experiment with more involved attention
-
-        return S
+        inp = torch.cat((v, C), dim=2)
+        h = self.rnn(inp, lengths)
+        return h
 
 class ModelingLayer(nn.Module):
 
