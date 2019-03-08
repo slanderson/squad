@@ -260,7 +260,8 @@ class SelfAttention(nn.Module):
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, input_size, hidden_size, num_layers=1, drop_prob=0.1, use_lstm=False):
+    def __init__(self, input_size, hidden_size, num_layers=1, drop_prob=0.1, use_lstm=False,
+                 device=torch.device('cpu')):
         super(SelfAttention, self).__init__()
         self.own_linear = nn.Linear(input_size, hidden_size)
         self.comp_linear = nn.Linear(input_size, hidden_size)
@@ -272,11 +273,12 @@ class SelfAttention(nn.Module):
         self.v = nn.Parameter(torch.zeros(hidden_size, 1))
         nn.init.xavier_uniform_(self.v)
         self.dropout = nn.Dropout(drop_prob)
+        self.device = device
         
 
     def forward(self, v, lengths, p_mask):
         batch_size, p_len, vec_size = v.size()
-        C = torch.zeros(*v.size())
+        C = torch.zeros(*v.size(), device=self.device)
         p_mask = p_mask.view(batch_size, p_len, 1)  # (batch_size, c_len, 1)
         S_v = self.comp_linear(v)
         for i in range(p_len):
@@ -315,10 +317,10 @@ class BiDAFOutput(nn.Module):
         hidden_size (int): Hidden size used in the BiDAF model.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, hidden_size, drop_prob, use_lstm):
+    def __init__(self, hidden_size, att_size, mod_size, drop_prob, use_lstm=False):
         super(BiDAFOutput, self).__init__()
-        self.att_linear_1 = nn.Linear(8 * hidden_size, 1)
-        self.mod_linear_1 = nn.Linear(2 * hidden_size, 1)
+        self.att_linear_1 = nn.Linear(att_size, 1)
+        self.mod_linear_1 = nn.Linear(mod_size, 1)
 
         self.rnn = RNNEncoder(input_size=2 * hidden_size,
                               hidden_size=hidden_size,
@@ -326,8 +328,8 @@ class BiDAFOutput(nn.Module):
                               drop_prob=drop_prob,
                               use_lstm=use_lstm)
 
-        self.att_linear_2 = nn.Linear(8 * hidden_size, 1)
-        self.mod_linear_2 = nn.Linear(2 * hidden_size, 1)
+        self.att_linear_2 = nn.Linear(att_size, 1)
+        self.mod_linear_2 = nn.Linear(mod_size, 1)
 
     def forward(self, att, mod, mask):
         # Shapes: (batch_size, seq_len, 1)

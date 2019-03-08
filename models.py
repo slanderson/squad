@@ -34,7 +34,7 @@ class BiDAF(nn.Module):
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.,
                  char_cnn=False, use_lstm=False, use_aoa=False, use_self_att=False,
-                 use_att_gate=False, share_rnns=True):
+                 use_att_gate=False, share_rnns=True, device=torch.device('cpu')):
         super(BiDAF, self).__init__() 
         self.emb = layers.Embedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
@@ -57,20 +57,25 @@ class BiDAF(nn.Module):
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
                                          drop_prob=drop_prob,)
 
-        self.self_att = layers.SelfAttention(8*hidden_size, 
-                                             4*hidden_size,
+        self.self_att = layers.SelfAttention(hidden_size, 
+                                             hidden_size,
                                              num_layers=1,
                                              drop_prob=drop_prob,
-                                             use_lstm=use_lstm) if use_self_att else None
-        self.mod = layers.ModelingLayer(input_size=8 * hidden_size,
+                                             use_lstm=use_lstm,
+                                             device=device) if use_self_att else None
+        self.mod = layers.ModelingLayer(input_size=(2*hidden_size if self.self_att
+                                                    else 8*hidden_size),
                                      hidden_size=hidden_size,
                                      num_layers=2,
                                      drop_prob=drop_prob,
                                      use_lstm=use_lstm)
 
-        self.out = layers.BiDAFOutput(hidden_size=hidden_size,
+        self.out = layers.BiDAFOutput(hidden_size,
+                                      hidden_size if self.self_att else 8*hidden_size, 
+                                      2*hidden_size,
                                       drop_prob=drop_prob,
                                       use_lstm=use_lstm)
+        self.reduce = nn.Linear(8*hidden_size, hidden_size)
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
@@ -86,8 +91,9 @@ class BiDAF(nn.Module):
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)                  # (batch_size, c_len, 8 * hidden_size)
 
-        self_att = self.self_att(att, c_len, c_mask)\
-                   if self.self_att else att            # (batch_size, c_len, 8 * hidden_size)
+        att = self.reduce(att) if self.self_att else att
+        self_att = (self.self_att(att, c_len, c_mask)   # (batch_size, c_len, 2 * hidden_size)
+                    if self.self_att else att)          # (batch_size, c_len, 8 * hidden_size)
 
         mod = self.mod(self_att, c_len)                 # (batch_size, c_len, 2 * hidden_size)
 
