@@ -57,7 +57,8 @@ class BiDAF(nn.Module):
         self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
                                          drop_prob=drop_prob,)
 
-        self.self_att = layers.SelfAttention(hidden_size, 
+        self.att_size = 1*hidden_size
+        self.self_att = layers.SelfAttention(self.att_size, 
                                              hidden_size,
                                              num_layers=1,
                                              drop_prob=drop_prob,
@@ -71,11 +72,11 @@ class BiDAF(nn.Module):
                                      use_lstm=use_lstm)
 
         self.out = layers.BiDAFOutput(hidden_size,
-                                      hidden_size if self.self_att else 8*hidden_size, 
+                                      self.att_size if self.self_att else 8*hidden_size, 
                                       2*hidden_size,
                                       drop_prob=drop_prob,
                                       use_lstm=use_lstm)
-        self.reduce = nn.Linear(8*hidden_size, hidden_size)
+        self.reduce = nn.Linear(8*hidden_size, self.att_size)
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
@@ -92,10 +93,11 @@ class BiDAF(nn.Module):
                        c_mask, q_mask)                  # (batch_size, c_len, 8 * hidden_size)
 
         att = self.reduce(att) if self.self_att else att
+
         self_att = (self.self_att(att, c_len, c_mask)   # (batch_size, c_len, 2 * hidden_size)
                     if self.self_att else att)          # (batch_size, c_len, 8 * hidden_size)
 
-        mod = self.mod(self_att, c_len)                 # (batch_size, c_len, 2 * hidden_size)
+        mod = self_att if self.self_att else self.mod(self_att, c_len)   # (batch_size, c_len, 2 * hidden_size)
 
         out = self.out(att, mod, c_mask)                # 2 tensors, each (batch_size, c_len)
 
