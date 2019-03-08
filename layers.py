@@ -253,6 +253,49 @@ class BiDAFAttention(nn.Module):
 
         return s
 
+class RNetAttention(nn.Module):
+    """Passage-query attention in the style of RNet
+
+    Args:
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations.
+    """
+    def __init__(self, input_size, hidden_size, num_layers=1, drop_prob=0.1,
+                 device=torch.device('cpu')):
+        super(RNetAttention, self).__init__()
+        self.p_linear = nn.Linear(input_size, hidden_size)
+        self.q_linear = nn.Linear(input_size, hidden_size)
+        self.v_linear = nn.Linear(hidden_size, hidden_size)
+        self.gate_linear = nn.Linear(2*input_size, 2*input_size)
+        self.gru = nn.GRUCell(input_size=2*input_size,
+                              hidden_size=hidden_size)
+        self.v = nn.Parameter(torch.zeros(hidden_size, 1))
+        nn.init.xavier_uniform_(self.v)
+        self.dropout = nn.Dropout(drop_prob)
+        self.device = device
+        self.hidden_size = hidden_size
+        
+
+    def forward(self, u_p, u_q, p_mask, q_mask):
+        batch_size, p_len, vec_size = u_p.size()
+        _, q_len, _ = u_q.size()
+        q_mask = q_mask.view(batch_size, q_len, 1)  # (batch_size, c_len, 1)
+        v = torch.zeros(batch_size, self.hidden_size, device=self.device)
+        S_q = self.q_linear(u_q)
+        att_out = torch.zeros(batch_size, p_len, self.hidden_size, device=self.device)
+        for i in range(p_len):
+            S = torch.tanh(S_q + 
+                           self.p_linear(u_p[:,i,:]).unsqueeze(1) +
+                           self.v_linear(v).unsqueeze(1)).matmul(self.v)
+            c = u_q.permute(0, 2, 1).matmul(masked_softmax(S, q_mask, dim=1)).squeeze()
+            inp = torch.cat((c, u_p[:,i,:]), dim=1) 
+            inp = torch.sigmoid(self.gate_linear(inp)) * inp
+            v = self.gru(inp, v)
+            att_out[:,i,:] = v
+            del S, c, inp
+
+        return att_out
+
 class SelfAttention(nn.Module):
     """Self-attention in the style of RNet
 
@@ -282,7 +325,7 @@ class SelfAttention(nn.Module):
         p_mask = p_mask.view(batch_size, p_len, 1)  # (batch_size, c_len, 1)
         S_v = self.comp_linear(v)
         for i in range(p_len):
-            S = F.tanh(S_v + self.own_linear(v[:, i, :]).unsqueeze(1)).matmul(self.v)
+            S = torch.tanh(S_v + self.own_linear(v[:, i, :]).unsqueeze(1)).matmul(self.v)
             C[:, i, :]= v.permute(0, 2, 1).matmul(masked_softmax(S, p_mask, dim=1)).squeeze()
             del S
 

@@ -54,8 +54,14 @@ class BiDAF(nn.Module):
                                        drop_prob=drop_prob,
                                        use_lstm=use_lstm) 
 
-        self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
+        self.att = layers.RNetAttention(2*hidden_size,
+                                        hidden_size, 
+                                        drop_prob=drop_prob,
+                                        device=device) if use_self_att else\
+                   layers.BiDAFAttention(hidden_size=2 * hidden_size,
                                          drop_prob=drop_prob,)
+        # self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
+        #                                  drop_prob=drop_prob,)
 
         self.att_size = 1*hidden_size
         self.self_att = layers.SelfAttention(self.att_size, 
@@ -92,7 +98,7 @@ class BiDAF(nn.Module):
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)                  # (batch_size, c_len, 8 * hidden_size)
 
-        att = self.reduce(att) if self.self_att else att
+        pdb.set_trace()
 
         self_att = (self.self_att(att, c_len, c_mask)   # (batch_size, c_len, 2 * hidden_size)
                     if self.self_att else att)          # (batch_size, c_len, 8 * hidden_size)
