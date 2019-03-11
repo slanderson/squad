@@ -98,8 +98,6 @@ class BiDAF(nn.Module):
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)                  # (batch_size, c_len, 8 * hidden_size)
 
-        pdb.set_trace()
-
         self_att = (self.self_att(att, c_len, c_mask)   # (batch_size, c_len, 2 * hidden_size)
                     if self.self_att else att)          # (batch_size, c_len, 8 * hidden_size)
 
@@ -108,4 +106,3 @@ class BiDAF(nn.Module):
         out = self.out(att, mod, c_mask)                # 2 tensors, each (batch_size, c_len)
 
         return out
-    

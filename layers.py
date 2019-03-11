@@ -308,6 +308,7 @@ class SelfAttention(nn.Module):
         super(SelfAttention, self).__init__()
         self.own_linear = nn.Linear(input_size, hidden_size)
         self.comp_linear = nn.Linear(input_size, hidden_size)
+        self.gate_linear = nn.Linear(2*input_size, 2*input_size)
         self.rnn = RNNEncoder(input_size=2*input_size,
                               hidden_size=hidden_size,
                               num_layers=num_layers,
@@ -317,7 +318,6 @@ class SelfAttention(nn.Module):
         nn.init.xavier_uniform_(self.v)
         self.dropout = nn.Dropout(drop_prob)
         self.device = device
-        
 
     def forward(self, v, lengths, p_mask):
         batch_size, p_len, vec_size = v.size()
@@ -330,6 +330,7 @@ class SelfAttention(nn.Module):
             del S
 
         inp = torch.cat((v, C), dim=2)
+        inp = torch.sigmoid(self.gate_linear(inp)) * inp
         h = self.rnn(inp, lengths)
         return h
 
@@ -385,5 +386,3 @@ class BiDAFOutput(nn.Module):
         log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
 
         return log_p1, log_p2
-    
-
