@@ -58,6 +58,7 @@ def main(args):
                   use_self_att=args.use_self_att,
                   use_att_gate=args.use_att_gate,
                   share_rnns=args.share_rnns,
+                  use_rnet_out=args.use_rnet_out,
                   device=device)
     model = nn.DataParallel(model, args.gpu_ids) if len(args.gpu_ids) > 0 else model
     if args.load_path:

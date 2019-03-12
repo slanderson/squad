@@ -126,6 +126,7 @@ class CNNEmbedding(nn.Module):
         @param output: Tensor of shape (sentence_length, batch_size, embed_size), containing the 
             CNN-based embeddings for each word of the sentences in the batch
         """
+        pdb.set_trace()
         sent_len, batch_size, m_word = input.shape[0], input.shape[1], input.shape[2]
         embed = self.char_embed(input)
         sentence_batch_reshape = embed.reshape(sent_len * batch_size, m_word, self.e_char).permute(0, 2, 1)
@@ -271,7 +272,7 @@ class RNetAttention(nn.Module):
                               hidden_size=hidden_size)
         self.v = nn.Parameter(torch.zeros(hidden_size, 1))
         nn.init.xavier_uniform_(self.v)
-        self.dropout = nn.Dropout(drop_prob)
+        self.drop_prob = drop_prob
         self.device = device
         self.hidden_size = hidden_size
         
@@ -294,6 +295,7 @@ class RNetAttention(nn.Module):
             att_out[:,i,:] = v
             del S, c, inp
 
+        att_out = F.dropout(att_out, self.drop_prob, self.training)
         return att_out
 
 class SelfAttention(nn.Module):
@@ -386,3 +388,41 @@ class BiDAFOutput(nn.Module):
         log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
 
         return log_p1, log_p2
+    
+class RNetOutput(nn.Module):
+    """ Output layer used by the RNet question answering system.
+    """
+
+    def __init__(self, input_size, hidden_size, drop_prob):
+        super(RNetOutput, self).__init__()
+        self.linear_p = nn.Linear(input_size, hidden_size)
+        self.linear_q = nn.Linear(input_size, hidden_size)
+        self.linear_h = nn.Linear(input_size, hidden_size)
+        self.v1 = nn.Parameter(torch.zeros(hidden_size, 1))
+        nn.init.xavier_uniform_(self.v1)
+        self.v2 = nn.Parameter(torch.zeros(hidden_size, 1))
+        nn.init.xavier_uniform_(self.v2)
+        self.Vrq_prod = nn.Parameter(torch.zeros(1, hidden_size))
+        self.gru = nn.GRUCell(input_size=input_size,
+                              hidden_size=input_size)
+
+
+    def forward(self, self_att, q_encs, p_mask, q_mask):
+        # compute initial answer-RNN state using pooling over the question encodings
+        S = torch.tanh(self.linear_q(q_encs) + self.Vrq_prod).matmul(self.v1).squeeze()
+        h0 = q_encs.permute(0, 2, 1).matmul(masked_softmax(S, q_mask, dim=1).unsqueeze(dim=2))
+
+        # compute log_p1
+        S = torch.tanh(self.linear_p(self_att) + 
+                       self.linear_h(h0.squeeze()).unsqueeze(dim=1)).matmul(self.v2)
+        log_p1 = masked_softmax(S.squeeze(), p_mask, dim=1, log_softmax=True)
+
+        # compute log_p2
+        c1 = self_att.permute(0, 2, 1).matmul(masked_softmax(S.squeeze(), p_mask, dim=1).unsqueeze(dim=2))
+        h1 = self.gru(c1.squeeze(), h0.squeeze())
+        S = torch.tanh(self.linear_p(self_att) + 
+                       self.linear_h(h1.squeeze()).unsqueeze(dim=1)).matmul(self.v2)
+        log_p2 = masked_softmax(S.squeeze(), p_mask, dim=1, log_softmax=True)
+
+        return log_p1, log_p2
+

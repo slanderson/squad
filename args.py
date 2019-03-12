@@ -260,6 +260,10 @@ def add_train_test_args(parser):
                         type=bool,
                         default=False,
                         help='Whether or not to use self-attention as in R-Net.')
+    parser.add_argument('--use_rnet_out',
+                        type=bool,
+                        default=False,
+                        help='Whether or not to use R-Net style output network.')
     parser.add_argument('--share_rnns',
                         type=bool,
                         default=True,

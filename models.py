@@ -34,7 +34,8 @@ class BiDAF(nn.Module):
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.,
                  char_cnn=False, use_lstm=False, use_aoa=False, use_self_att=False,
-                 use_att_gate=False, share_rnns=True, device=torch.device('cpu')):
+                 use_att_gate=False, share_rnns=True, use_rnet_out=False, 
+                 device=torch.device('cpu')):
         super(BiDAF, self).__init__() 
         self.emb = layers.Embedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
@@ -60,8 +61,6 @@ class BiDAF(nn.Module):
                                         device=device) if use_self_att else\
                    layers.BiDAFAttention(hidden_size=2 * hidden_size,
                                          drop_prob=drop_prob,)
-        # self.att = layers.BiDAFAttention(hidden_size=2 * hidden_size,
-        #                                  drop_prob=drop_prob,)
 
         self.att_size = 1*hidden_size
         self.self_att = layers.SelfAttention(self.att_size, 
@@ -77,12 +76,15 @@ class BiDAF(nn.Module):
                                      drop_prob=drop_prob,
                                      use_lstm=use_lstm)
 
-        self.out = layers.BiDAFOutput(hidden_size,
+        self.use_rnet_out = use_rnet_out
+        self.out = layers.RNetOutput(2*hidden_size,
+                                     hidden_size,
+                                     drop_prob=drop_prob) if use_rnet_out else\
+                   layers.BiDAFOutput(hidden_size,
                                       self.att_size if self.self_att else 8*hidden_size, 
                                       2*hidden_size,
                                       drop_prob=drop_prob,
                                       use_lstm=use_lstm)
-        self.reduce = nn.Linear(8*hidden_size, self.att_size)
 
     def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
@@ -103,6 +105,7 @@ class BiDAF(nn.Module):
 
         mod = self_att if self.self_att else self.mod(self_att, c_len)   # (batch_size, c_len, 2 * hidden_size)
 
-        out = self.out(att, mod, c_mask)                # 2 tensors, each (batch_size, c_len)
+        out = self.out(self_att, q_enc, c_mask, q_mask) if self.use_rnet_out else\
+              self.out(att, mod, c_mask)                # 2 tensors, each (batch_size, c_len)
 
         return out
