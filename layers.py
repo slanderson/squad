@@ -126,7 +126,6 @@ class CNNEmbedding(nn.Module):
         @param output: Tensor of shape (sentence_length, batch_size, embed_size), containing the 
             CNN-based embeddings for each word of the sentences in the batch
         """
-        pdb.set_trace()
         sent_len, batch_size, m_word = input.shape[0], input.shape[1], input.shape[2]
         embed = self.char_embed(input)
         sentence_batch_reshape = embed.reshape(sent_len * batch_size, m_word, self.e_char).permute(0, 2, 1)
@@ -261,8 +260,7 @@ class RNetAttention(nn.Module):
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, input_size, hidden_size, num_layers=1, drop_prob=0.1,
-                 device=torch.device('cpu')):
+    def __init__(self, input_size, hidden_size, num_layers=1, drop_prob=0.1):
         super(RNetAttention, self).__init__()
         self.p_linear = nn.Linear(input_size, hidden_size)
         self.q_linear = nn.Linear(input_size, hidden_size)
@@ -273,21 +271,19 @@ class RNetAttention(nn.Module):
         self.v = nn.Parameter(torch.zeros(hidden_size, 1))
         nn.init.xavier_uniform_(self.v)
         self.drop_prob = drop_prob
-        self.device = device
         self.hidden_size = hidden_size
-        
 
     def forward(self, u_p, u_q, p_mask, q_mask):
         batch_size, p_len, vec_size = u_p.size()
         _, q_len, _ = u_q.size()
         q_mask = q_mask.view(batch_size, q_len, 1)  # (batch_size, c_len, 1)
-        v = torch.zeros(batch_size, self.hidden_size, device=self.device)
+        v = None
         S_q = self.q_linear(u_q)
-        att_out = torch.zeros(batch_size, p_len, self.hidden_size, device=self.device)
+        att_out = torch.zeros(batch_size, p_len, self.hidden_size, device=self.v.device)
         for i in range(p_len):
             S = torch.tanh(S_q + 
                            self.p_linear(u_p[:,i,:]).unsqueeze(1) +
-                           self.v_linear(v).unsqueeze(1)).matmul(self.v)
+                           (self.v_linear(v).unsqueeze(1) if v is not None else 0) ).matmul(self.v)
             c = u_q.permute(0, 2, 1).matmul(masked_softmax(S, q_mask, dim=1)).squeeze()
             inp = torch.cat((c, u_p[:,i,:]), dim=1) 
             inp = torch.sigmoid(self.gate_linear(inp)) * inp
@@ -305,8 +301,7 @@ class SelfAttention(nn.Module):
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations.
     """
-    def __init__(self, input_size, hidden_size, num_layers=1, drop_prob=0.1, use_lstm=False,
-                 device=torch.device('cpu')):
+    def __init__(self, input_size, hidden_size, num_layers=1, drop_prob=0.1, use_lstm=False):
         super(SelfAttention, self).__init__()
         self.own_linear = nn.Linear(input_size, hidden_size)
         self.comp_linear = nn.Linear(input_size, hidden_size)
@@ -319,11 +314,10 @@ class SelfAttention(nn.Module):
         self.v = nn.Parameter(torch.zeros(hidden_size, 1))
         nn.init.xavier_uniform_(self.v)
         self.dropout = nn.Dropout(drop_prob)
-        self.device = device
 
     def forward(self, v, lengths, p_mask):
         batch_size, p_len, vec_size = v.size()
-        C = torch.zeros(*v.size(), device=self.device)
+        C = torch.zeros(*v.size(), device=self.v.device)
         p_mask = p_mask.view(batch_size, p_len, 1)  # (batch_size, c_len, 1)
         S_v = self.comp_linear(v)
         for i in range(p_len):
@@ -402,14 +396,13 @@ class RNetOutput(nn.Module):
         nn.init.xavier_uniform_(self.v1)
         self.v2 = nn.Parameter(torch.zeros(hidden_size, 1))
         nn.init.xavier_uniform_(self.v2)
-        self.Vrq_prod = nn.Parameter(torch.zeros(1, hidden_size))
         self.gru = nn.GRUCell(input_size=input_size,
                               hidden_size=input_size)
 
 
     def forward(self, self_att, q_encs, p_mask, q_mask):
         # compute initial answer-RNN state using pooling over the question encodings
-        S = torch.tanh(self.linear_q(q_encs) + self.Vrq_prod).matmul(self.v1).squeeze()
+        S = torch.tanh(self.linear_q(q_encs)).matmul(self.v1).squeeze()
         h0 = q_encs.permute(0, 2, 1).matmul(masked_softmax(S, q_mask, dim=1).unsqueeze(dim=2))
 
         # compute log_p1

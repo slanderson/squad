@@ -57,8 +57,7 @@ class BiDAF(nn.Module):
 
         self.att = layers.RNetAttention(2*hidden_size,
                                         hidden_size, 
-                                        drop_prob=drop_prob,
-                                        device=device) if use_self_att else\
+                                        drop_prob=drop_prob) if use_self_att else\
                    layers.BiDAFAttention(hidden_size=2 * hidden_size,
                                          drop_prob=drop_prob,)
 
@@ -67,8 +66,7 @@ class BiDAF(nn.Module):
                                              hidden_size,
                                              num_layers=1,
                                              drop_prob=drop_prob,
-                                             use_lstm=use_lstm,
-                                             device=device) if use_self_att else None
+                                             use_lstm=use_lstm) if use_self_att else None
         self.mod = layers.ModelingLayer(input_size=(2*hidden_size if self.self_att
                                                     else 8*hidden_size),
                                      hidden_size=hidden_size,
