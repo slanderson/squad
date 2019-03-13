@@ -27,7 +27,7 @@ class Embedding(nn.Module):
         char_cnn (bool): Whether or not to use character-based CNN embeddings
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, char_cnn=False,
-                 char_size=50):
+                 char_size=100):
         super(Embedding, self).__init__()
 
         self.drop_prob = drop_prob
@@ -37,7 +37,7 @@ class Embedding(nn.Module):
                               bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
         self.char_emb = CNNEmbedding(char_size, char_vectors.shape[0],
-                                     char_embed_size=char_vectors.shape[1],
+                                     char_embed_size=20,
                                      drop_prob=drop_prob) if char_cnn else None
 
     def forward(self, x, xc):
