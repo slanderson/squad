@@ -51,7 +51,7 @@ class BiDAF(nn.Module):
         self.enc_q = self.enc_c if share_rnns else\
                      layers.RNNEncoder(input_size=hidden_size,
                                        hidden_size=hidden_size,
-                                       num_layers=1,
+                                       num_layers=3,
                                        drop_prob=drop_prob,
                                        use_lstm=use_lstm) 
 

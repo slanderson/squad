@@ -262,10 +262,10 @@ class RNetAttention(nn.Module):
     """
     def __init__(self, input_size, hidden_size, num_layers=1, drop_prob=0.1):
         super(RNetAttention, self).__init__()
-        self.p_linear = nn.Linear(input_size, hidden_size)
-        self.q_linear = nn.Linear(input_size, hidden_size)
-        self.v_linear = nn.Linear(hidden_size, hidden_size)
-        self.gate_linear = nn.Linear(2*input_size, 2*input_size)
+        self.p_linear = nn.Linear(input_size, hidden_size, bias=False)
+        self.q_linear = nn.Linear(input_size, hidden_size, bias=False)
+        self.v_linear = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.gate_linear = nn.Linear(2*input_size, 2*input_size, bias=False)
         self.gru = nn.GRUCell(input_size=2*input_size,
                               hidden_size=hidden_size)
         self.v = nn.Parameter(torch.zeros(hidden_size, 1))
@@ -274,6 +274,7 @@ class RNetAttention(nn.Module):
         self.hidden_size = hidden_size
 
     def forward(self, u_p, u_q, p_mask, q_mask):
+        # TODO make bidirectional
         batch_size, p_len, vec_size = u_p.size()
         _, q_len, _ = u_q.size()
         q_mask = q_mask.view(batch_size, q_len, 1)  # (batch_size, c_len, 1)
@@ -316,6 +317,7 @@ class SelfAttention(nn.Module):
         self.dropout = nn.Dropout(drop_prob)
 
     def forward(self, v, lengths, p_mask):
+        # TODO see if this can be vectorized
         batch_size, p_len, vec_size = v.size()
         C = torch.zeros(*v.size(), device=self.v.device)
         p_mask = p_mask.view(batch_size, p_len, 1)  # (batch_size, c_len, 1)
@@ -398,7 +400,6 @@ class RNetOutput(nn.Module):
         nn.init.xavier_uniform_(self.v2)
         self.gru = nn.GRUCell(input_size=input_size,
                               hidden_size=input_size)
-
 
     def forward(self, self_att, q_encs, p_mask, q_mask):
         # compute initial answer-RNN state using pooling over the question encodings
