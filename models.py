@@ -67,12 +67,13 @@ class BiDAF(nn.Module):
                                              num_layers=1,
                                              drop_prob=drop_prob,
                                              use_lstm=use_lstm) if use_self_att else None
-        self.mod = layers.ModelingLayer(input_size=(2*hidden_size if self.self_att
+        self.mod = None if use_self_att else\
+                   layers.ModelingLayer(input_size=(2*hidden_size if self.self_att
                                                     else 8*hidden_size),
-                                     hidden_size=hidden_size,
-                                     num_layers=2,
-                                     drop_prob=drop_prob,
-                                     use_lstm=use_lstm)
+                                         hidden_size=hidden_size,
+                                         num_layers=2,
+                                         drop_prob=drop_prob,
+                                         use_lstm=use_lstm)
 
         self.use_rnet_out = use_rnet_out
         self.out = layers.RNetOutput(2*hidden_size,
