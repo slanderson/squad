@@ -335,7 +335,6 @@ class SelfAttention(nn.Module):
         self.dropout = nn.Dropout(drop_prob)
 
     def forward(self, v, lengths, p_mask):
-        # TODO see if this can be vectorized
         batch_size, p_len, vec_size = v.size()
         C = torch.zeros(*v.size(), device=self.v.device)
         p_mask = p_mask.view(batch_size, p_len, 1)  # (batch_size, c_len, 1)
@@ -345,10 +344,11 @@ class SelfAttention(nn.Module):
             C[:, i, :]= v.permute(0, 2, 1).matmul(masked_softmax(S, p_mask, dim=1)).squeeze()
             del S
 
-        # att_sum = self.own_linear(v).unsqueeze(dim=2) +\
-        #             S_v.unsqueeze(dim=1).expand(batch_size, p_len, p_len, vec_size)
-        # logits = torch.tanh(att_sum).matmul(self.v).squeeze()
-        # pdb.set_trace()
+        # vectorized (but memory-intensive) version below
+        # a = masked_softmax(torch.tanh(self.own_linear(v).unsqueeze(1) +
+        #         S_v.unsqueeze(2)).matmul(self.v).squeeze(), p_mask, dim=1)
+        # C2 = v.permute(0, 2, 1).matmul(a).permute(0, 2, 1)
+
         inp = torch.cat((v, C), dim=2)
         inp = torch.sigmoid(self.gate_linear(inp)) * inp
         h = self.rnn(inp, lengths)
