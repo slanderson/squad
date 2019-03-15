@@ -61,7 +61,7 @@ class BiDAF(nn.Module):
                    layers.BiDAFAttention(hidden_size=2 * hidden_size,
                                          drop_prob=drop_prob,)
 
-        self.att_size = 1*hidden_size
+        self.att_size = 2*hidden_size
         self.self_att = layers.SelfAttention(self.att_size, 
                                              hidden_size,
                                              num_layers=1,

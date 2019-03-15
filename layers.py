@@ -266,34 +266,52 @@ class RNetAttention(nn.Module):
         self.q_linear = nn.Linear(input_size, hidden_size, bias=False)
         self.v_linear = nn.Linear(hidden_size, hidden_size, bias=False)
         self.gate_linear = nn.Linear(2*input_size, 2*input_size, bias=False)
-        self.gru = nn.GRUCell(input_size=2*input_size,
-                              hidden_size=hidden_size)
+        self.gruf = nn.GRUCell(input_size=2*input_size,
+                              hidden_size=hidden_size,
+                              bias=False)
+        self.grub = nn.GRUCell(input_size=2*input_size,
+                              hidden_size=hidden_size,
+                              bias=False)
         self.v = nn.Parameter(torch.zeros(hidden_size, 1))
         nn.init.xavier_uniform_(self.v)
         self.drop_prob = drop_prob
         self.hidden_size = hidden_size
 
     def forward(self, u_p, u_q, p_mask, q_mask):
-        # TODO make bidirectional
         batch_size, p_len, vec_size = u_p.size()
         _, q_len, _ = u_q.size()
         q_mask = q_mask.view(batch_size, q_len, 1)  # (batch_size, c_len, 1)
-        v = None
+        vf = None
+        vb = None
         S_q = self.q_linear(u_q)
-        att_out = torch.zeros(batch_size, p_len, self.hidden_size, device=self.v.device)
+        att_outf = torch.zeros(batch_size, p_len, self.hidden_size, device=self.v.device)
+        att_outb = torch.zeros(batch_size, p_len, self.hidden_size, device=self.v.device)
         for i in range(p_len):
+            # forward pass
             S = torch.tanh(S_q + 
                            self.p_linear(u_p[:,i,:]).unsqueeze(1) +
-                           (self.v_linear(v).unsqueeze(1) if v is not None else 0) ).matmul(self.v)
+                           (self.v_linear(vf).unsqueeze(1) if vf is not None else 0) ).matmul(self.v)
             c = u_q.permute(0, 2, 1).matmul(masked_softmax(S, q_mask, dim=1)).squeeze()
             inp = torch.cat((c, u_p[:,i,:]), dim=1) 
             inp = torch.sigmoid(self.gate_linear(inp)) * inp
-            v = self.gru(inp, v)
-            att_out[:,i,:] = v
+            vf = self.gruf(inp, vf)
+            att_outf[:,i,:] = vf * p_mask[:, i].float().unsqueeze(dim=1)
+
+            # backward pass
+            S = torch.tanh(S_q + 
+                           self.p_linear(u_p[:,-i-1,:]).unsqueeze(1) +
+                           (self.v_linear(vb).unsqueeze(1) if vb is not None else 0) ).matmul(self.v)
+            c = u_q.permute(0, 2, 1).matmul(masked_softmax(S, q_mask, dim=1)).squeeze()
+            inp = torch.cat((c, u_p[:,-i-1,:]), dim=1) 
+            inp = torch.sigmoid(self.gate_linear(inp)) * inp
+            inp = p_mask[:, -i-1].float().unsqueeze(dim=1) * inp
+            vb = self.grub(inp, vb)
+            att_outb[:,-i-1,:] = vb
             del S, c, inp
 
-        att_out = F.dropout(att_out, self.drop_prob, self.training)
-        return att_out
+        return F.dropout(torch.cat((att_outf, att_outb), dim=2), 
+                            self.drop_prob, 
+                            self.training)
 
 class SelfAttention(nn.Module):
     """Self-attention in the style of RNet
@@ -327,6 +345,10 @@ class SelfAttention(nn.Module):
             C[:, i, :]= v.permute(0, 2, 1).matmul(masked_softmax(S, p_mask, dim=1)).squeeze()
             del S
 
+        # att_sum = self.own_linear(v).unsqueeze(dim=2) +\
+        #             S_v.unsqueeze(dim=1).expand(batch_size, p_len, p_len, vec_size)
+        # logits = torch.tanh(att_sum).matmul(self.v).squeeze()
+        # pdb.set_trace()
         inp = torch.cat((v, C), dim=2)
         inp = torch.sigmoid(self.gate_linear(inp)) * inp
         h = self.rnn(inp, lengths)
